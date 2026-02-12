@@ -1,7 +1,12 @@
 # User data - do not commit to repository
 user_preferences.json
 claude_api_log.json
+rezept-api-key.txt
+VSCODE_SETUP.md
 users/
+
+# VS Code
+.vscode/
 
 # Python
 __pycache__/
