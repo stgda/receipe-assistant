@@ -4,6 +4,7 @@ claude_api_log.json
 rezept-api-key.txt
 VSCODE_SETUP.md
 users/
+venv/
 files.zip
 files/
 recipe_assistant.db

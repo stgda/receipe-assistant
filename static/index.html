@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Recipe Assistant</title>
+    <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+    <div class="container">
+        <!-- Login/User Selection Screen -->
+        <div id="loginScreen" class="screen">
+            <div class="card">
+                <h1>🍳 Recipe Assistant</h1>
+                <p class="subtitle">AI-powered recipe suggestions</p>
+                
+                <div id="userList" class="user-list">
+                    <!-- Users will be loaded here -->
+                </div>
+                
+                <button id="showNewUserBtn" class="btn btn-secondary">Create New User</button>
+                
+                <div id="newUserForm" class="form-group" style="display: none;">
+                    <h3>Create New User</h3>
+                    <input type="text" id="newUsername" placeholder="Username" class="input">
+                    <select id="newUserLanguage" class="input">
+                        <option value="en">English</option>
+                        <option value="de">Deutsch</option>
+                    </select>
+                    <button id="createUserBtn" class="btn btn-primary">Create</button>
+                    <button id="cancelNewUserBtn" class="btn btn-secondary">Cancel</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Main App Screen -->
+        <div id="appScreen" class="screen" style="display: none;">
+            <nav class="navbar">
+                <div class="nav-left">
+                    <h2>🍳 Recipe Assistant</h2>
+                    <span id="currentUser" class="user-badge"></span>
+                </div>
+                <div class="nav-right">
+                    <button id="logoutBtn" class="btn btn-text">Logout</button>
+                </div>
+            </nav>
+
+            <div class="tabs">
+                <button class="tab-btn active" data-tab="suggest">Get Suggestions</button>
+                <button class="tab-btn" data-tab="feedback">Give Feedback</button>
+                <button class="tab-btn" data-tab="preferences">Preferences</button>
+            </div>
+
+            <!-- Suggest Tab -->
+            <div id="suggestTab" class="tab-content active">
+                <div class="card">
+                    <h2 id="suggestTitle">Get Recipe Suggestions</h2>
+                    <p id="suggestSubtitle">Tell me what ingredients you have</p>
+                    
+                    <div class="form-group">
+                        <label for="ingredients" id="ingredientsLabel">Your Ingredients:</label>
+                        <textarea 
+                            id="ingredients" 
+                            class="textarea" 
+                            rows="3" 
+                            placeholder="e.g., tomatoes, mozzarella, basil, pasta"
+                        ></textarea>
+                    </div>
+                    
+                    <button id="getSuggestionsBtn" class="btn btn-primary btn-large">
+                        Get Suggestions
+                    </button>
+                    
+                    <div id="recipeSuggestions" class="suggestions"></div>
+                </div>
+            </div>
+
+            <!-- Feedback Tab -->
+            <div id="feedbackTab" class="tab-content">
+                <div class="card">
+                    <h2 id="feedbackTitle">Give Feedback</h2>
+                    
+                    <div id="unratedRecipes" class="recipe-list">
+                        <!-- Unrated recipes will be loaded here -->
+                    </div>
+                    
+                    <div id="feedbackForm" class="feedback-form" style="display: none;">
+                        <h3 id="feedbackFormTitle">Rate: <span id="dishNameDisplay"></span></h3>
+                        
+                        <div class="rating-buttons">
+                            <button class="rating-btn" data-rating="1">1 ⭐</button>
+                            <button class="rating-btn" data-rating="2">2 ⭐</button>
+                            <button class="rating-btn" data-rating="3">3 ⭐</button>
+                            <button class="rating-btn" data-rating="4">4 ⭐</button>
+                            <button class="rating-btn" data-rating="5">5 ⭐</button>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="comment" id="commentLabel">Comment (optional):</label>
+                            <textarea id="comment" class="textarea" rows="3"></textarea>
+                        </div>
+                        
+                        <button id="submitFeedbackBtn" class="btn btn-primary">Submit</button>
+                        <button id="cancelFeedbackBtn" class="btn btn-secondary">Cancel</button>
+                    </div>
+                    
+                    <p id="noUnratedRecipes" class="info-text" style="display: none;">
+                        No unrated recipes found. Get some suggestions first!
+                    </p>
+                </div>
+            </div>
+
+            <!-- Preferences Tab -->
+            <div id="preferencesTab" class="tab-content">
+                <div class="card">
+                    <h2 id="preferencesTitle">Your Preferences</h2>
+                    
+                    <div id="statsDisplay" class="stats">
+                        <!-- Stats will be loaded here -->
+                    </div>
+                    
+                    <div id="likedDishes" class="dish-list">
+                        <h3 id="likedTitle">Liked Dishes</h3>
+                        <ul id="likedList"></ul>
+                    </div>
+                    
+                    <div id="dislikedDishes" class="dish-list">
+                        <h3 id="dislikedTitle">Disliked Dishes</h3>
+                        <ul id="dislikedList"></ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="loading" class="loading-overlay" style="display: none;">
+        <div class="spinner"></div>
+    </div>
+
+    <script src="/static/app.js"></script>
+</body>
+</html>
