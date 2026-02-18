@@ -10,6 +10,8 @@ import os
 import json
 import anthropic
 from datetime import datetime
+import database as db
+from services import RecipeService, RatingService, UserService
 
 # User data directory
 USERS_DIR = "users"
@@ -193,57 +195,49 @@ def ensure_user_directory(username):
     os.makedirs(user_files["dir"], exist_ok=True)
     return user_files
 
-def list_users():
-    """List all existing users"""
-    if not os.path.exists(USERS_DIR):
-        return []
-    return [d for d in os.listdir(USERS_DIR)
-            if os.path.isdir(os.path.join(USERS_DIR, d))]
-
-def select_or_create_user():
+def select_or_create_user(user_service):
     """Let user select existing user or create new one"""
-    users = list_users()
-
+    users = user_service.list_users()
+    usernames = [u['username'] for u in users]
+    
     print("\n" + "=" * 60)
     print("👤  User Selection / Benutzerauswahl")
     print("=" * 60)
-
-    if users:
+    
+    if usernames:
         print("\nExisting users / Existierende Benutzer:")
-        for i, user in enumerate(users, 1):
-            print(f"{i}. {user}")
-        print(f"{len(users) + 1}. Create new user / Neuen Benutzer erstellen")
-
+        for i, username in enumerate(usernames, 1):
+            print(f"{i}. {username}")
+        print(f"{len(usernames) + 1}. Create new user / Neuen Benutzer erstellen")
+        
         while True:
             try:
-                choice = int(input(f"\nSelect user / Benutzer auswählen (1-{len(users) + 1}): "))
-                if 1 <= choice <= len(users):
-                    return users[choice - 1]
-                elif choice == len(users) + 1:
+                choice = int(input(f"\nSelect user / Benutzer auswählen (1-{len(usernames) + 1}): "))
+                if 1 <= choice <= len(usernames):
+                    username = usernames[choice - 1]
+                    # Authenticate/login user
+                    result = user_service.authenticate_user(username)
+                    if result['success']:
+                        return result['user']
+                    else:
+                        print(f"Error: {result['error']}")
+                        continue
+                elif choice == len(usernames) + 1:
                     break
                 else:
-                    print(f"Please enter a number between / Bitte gib eine Zahl zwischen 1 und {len(users) + 1} ein")
+                    print(f"Please enter a number between / Bitte gib eine Zahl zwischen 1 und {len(usernames) + 1} ein")
             except ValueError:
                 print("Please enter a valid number / Bitte gib eine gültige Zahl ein")
-
+    
     # Create new user
     while True:
         username = input("\nEnter username / Benutzername eingeben (letters, numbers, underscore only / nur Buchstaben, Zahlen, Unterstriche): ").strip()
-        if not username:
-            print("Username cannot be empty / Benutzername darf nicht leer sein")
-            continue
-        if not username.replace("_", "").replace("-", "").isalnum():
-            print("Username can only contain letters, numbers, underscore and hyphen / Benutzername darf nur Buchstaben, Zahlen, Unterstriche und Bindestriche enthalten")
-            continue
-        if username in users:
-            print("Username already exists / Benutzername existiert bereits")
-            continue
-
+        
         # Language selection for new user
         print("\nSelect your language / Wähle deine Sprache:")
         print("1. English")
         print("2. Deutsch")
-
+        
         while True:
             try:
                 lang_choice = int(input("\nYour choice / Deine Wahl (1-2): "))
@@ -257,22 +251,31 @@ def select_or_create_user():
                     print("Please enter 1 or 2 / Bitte gib 1 oder 2 ein")
             except ValueError:
                 print("Please enter a valid number / Bitte gib eine gültige Zahl ein")
-
-        # Create user directory and save initial preferences with language
-        user_files = ensure_user_directory(username)
-        initial_prefs = {
-            "language": language,
-            "liked_dishes": [],
-            "disliked_dishes": [],
-            "ratings": [],
-            "dietary_restrictions": [],
-            "suggested_recipes": []
-        }
-        save_preferences(initial_prefs, user_files["preferences"])
-
-        print(f"\n✓ {t(language, 'language_saved')}")
-
-        return username
+        
+        # Create user via service
+        result = user_service.create_user(username, language)
+        
+        if result['success']:
+            # Create user directory for logs (preferences now in DB)
+            user_files = ensure_user_directory(username)
+            
+            print(f"\n✓ {t(language, 'language_saved')}")
+            
+            return result['user']
+        else:
+            error_msg = result['error']
+            if language == "de":
+                if "empty" in error_msg:
+                    print("Benutzername darf nicht leer sein")
+                elif "only contain" in error_msg:
+                    print("Benutzername darf nur Buchstaben, Zahlen, Unterstriche und Bindestriche enthalten")
+                elif "already exists" in error_msg:
+                    print("Benutzername existiert bereits")
+                else:
+                    print(f"Fehler: {error_msg}")
+            else:
+                print(f"Error: {error_msg}")
+            continue
 
 def load_preferences(preferences_file):
     """Load saved user preferences"""
@@ -308,97 +311,44 @@ def save_api_log(log_entries, log_file):
     """Save the API log (maximum 100 entries)"""
     # Keep only the last 100 entries
     log_entries = log_entries[-100:]
-
+    
     with open(log_file, 'w', encoding='utf-8') as f:
         json.dump(log_entries, f, indent=2, ensure_ascii=False)
 
 def log_api_call(prompt, response, log_file):
     """Add an API call to the log"""
     log_entries = load_api_log(log_file)
-
+    
     log_entry = {
         "timestamp": datetime.now().isoformat(),
         "prompt": prompt,
         "response": response
     }
-
+    
     log_entries.append(log_entry)
     save_api_log(log_entries, log_file)
-
+    
     # Note: Using print without translation for technical log messages
     print(f"[Log] API call saved ({len(log_entries)} entries in log)")
 
-def get_recipe_suggestion(client, ingredients, preferences, preferences_file, log_file, lang):
-    """Get recipe suggestion from Claude based on ingredients and preferences"""
+def get_recipe_suggestion_ui(recipe_service, ingredients, user_id, lang, log_file):
+    """
+    UI wrapper for getting recipe suggestions
+    Handles logging and returns formatted response
+    """
+    result = recipe_service.suggest_recipes(user_id, ingredients, lang)
+    
+    if result['success']:
+        # Log the API call
+        log_api_call(result['prompt'], result['raw_response'], log_file)
+        return result['raw_response']
+    else:
+        error_msg = result.get('error', 'Unknown error')
+        return f"Error getting recipes: {error_msg}"
 
-    # Build context from preferences
-    preference_context = ""
-    if preferences["liked_dishes"]:
-        preference_context += f"\n\n{t(lang, 'pref_dishes_liked')}: {', '.join(preferences['liked_dishes'][-5:])}"
-    if preferences["disliked_dishes"]:
-        preference_context += f"\n{t(lang, 'pref_dishes_disliked')}: {', '.join(preferences['disliked_dishes'][-5:])}"
-    if preferences["dietary_restrictions"]:
-        preference_context += f"\n{t(lang, 'pref_dietary')}: {', '.join(preferences['dietary_restrictions'])}"
-
-    # Use language-specific prompt
-    prompt = t(lang, "claude_prompt_ingredients").format(
-        ingredients=ingredients,
-        preferences=preference_context
-    )
-
-    message = client.messages.create(
-        model="claude-sonnet-4-20250514",
-        max_tokens=1000,
-        messages=[
-            {"role": "user", "content": prompt}
-        ]
-    )
-
-    response_text = message.content[0].text
-
-    # Log prompt and response
-    log_api_call(prompt, response_text, log_file)
-
-    # Save the recipe suggestions
-    save_suggested_recipes(response_text, ingredients, preferences, preferences_file)
-
-    return response_text
-
-def save_suggested_recipes(response_text, ingredients, preferences, preferences_file):
-    """Extract and save recipe names from Claude's response"""
-    lines = response_text.split('\n')
-    recipe_names = []
-
-    for line in lines:
-        line = line.strip()
-        # Recognize recipe names: lines starting with ## (Markdown H2)
-        if line.startswith('##'):
-            name = line.replace('##', '').strip()
-            # Remove additional formatting if present
-            name = name.strip('#').strip()
-            if name and len(name) < 100:  # Prevent too long "names"
-                recipe_names.append(name)
-
-    # Save found recipes
-    if recipe_names:
-        timestamp = datetime.now().isoformat()
-        for recipe_name in recipe_names:
-            preferences["suggested_recipes"].append({
-                "name": recipe_name,
-                "ingredients": ingredients,
-                "suggested_at": timestamp,
-                "rated": False
-            })
-
-        # Keep only the last 20 suggestions
-        preferences["suggested_recipes"] = preferences["suggested_recipes"][-20:]
-
-        # Save immediately so recipes are preserved even without feedback
-        save_preferences(preferences, preferences_file)
-
-def get_feedback(client, dish_name, preferences, preferences_file, lang):
+def get_feedback_ui(rating_service, dish_name, user_id, lang, recipe_id=None):
     """Collect feedback after cooking"""
-
+    
     print(f"\n--- {t(lang, 'feedback_for')}: {dish_name} ---")
     print(t(lang, "how_liked"))
     print(f"1 - {t(lang, 'rating_1')}")
@@ -406,7 +356,7 @@ def get_feedback(client, dish_name, preferences, preferences_file, lang):
     print(f"3 - {t(lang, 'rating_3')}")
     print(f"4 - {t(lang, 'rating_4')}")
     print(f"5 - {t(lang, 'rating_5')}")
-
+    
     while True:
         try:
             rating = int(input(f"\n{t(lang, 'your_rating')}: "))
@@ -415,77 +365,78 @@ def get_feedback(client, dish_name, preferences, preferences_file, lang):
             print(f"{t(lang, 'please_enter_number')} 1 {t(lang, 'please_enter_number')} 5.")
         except ValueError:
             print(t(lang, "please_enter_valid"))
-
-    # Save feedback
-    preferences["ratings"].append({
-        "dish": dish_name,
-        "rating": rating,
-        "date": datetime.now().isoformat()
-    })
-
-    if rating >= 4:
-        preferences["liked_dishes"].append(dish_name)
-        if lang == "de":
-            print(f"✓ {t(lang, 'noted_liked')} '{dish_name}' geschmeckt!")
-        else:
-            print(f"✓ {t(lang, 'noted_liked')} '{dish_name}'!")
-    elif rating <= 2:
-        preferences["disliked_dishes"].append(dish_name)
-        print(f"✓ {t(lang, 'noted_disliked')} '{dish_name}' {t(lang, 'not_to_taste')}")
-
-    # Optional: Ask for details
+    
+    # Optional: Ask for comment
+    comment = None
     if rating <= 2:
-        reason = input(f"\n{t(lang, 'what_not_liked')}: ")
-        if reason:
-            preferences["ratings"][-1]["reason"] = reason
+        comment = input(f"\n{t(lang, 'what_not_liked')}: ")
+        if not comment:
+            comment = None
+    
+    # Submit rating via service
+    result = rating_service.submit_rating(user_id, dish_name, rating, comment, recipe_id)
+    
+    if result['success']:
+        if rating >= 4:
+            if lang == "de":
+                print(f"\n✓ {t(lang, 'noted_liked')} '{dish_name}' geschmeckt!")
+            else:
+                print(f"\n✓ {t(lang, 'noted_liked')} '{dish_name}'!")
+        elif rating <= 2:
+            print(f"\n✓ {t(lang, 'noted_disliked')} '{dish_name}' {t(lang, 'not_to_taste')}")
+        
+        print(f"\n{t(lang, 'thank_feedback')}\n")
+    else:
+        error_msg = result.get('error', 'Unknown error')
+        print(f"\nError saving feedback: {error_msg}\n")
 
-    # Mark recipe as rated
-    for recipe in preferences["suggested_recipes"]:
-        if recipe["name"].lower() == dish_name.lower():
-            recipe["rated"] = True
-            break
-
-    save_preferences(preferences, preferences_file)
-    print(f"\n{t(lang, 'thank_feedback')}\n")
-
-def select_recipe_from_suggestions(preferences, lang):
+def select_recipe_from_suggestions_ui(recipe_service, user_id, lang):
     """Let user select from suggested recipes"""
-    # Filter unrated recipes
-    unrated_recipes = [r for r in preferences["suggested_recipes"] if not r.get("rated", False)]
-
+    # Get unrated recipes from service
+    unrated_recipes = recipe_service.get_unrated_recipes(user_id)
+    
     if not unrated_recipes:
         print(f"\n{t(lang, 'no_unrated_recipes')}")
         print(t(lang, "tip_get_suggestions"))
-        return None
-
+        return None, None
+    
     print(f"\n--- {t(lang, 'recently_suggested')} ---")
-    for i, recipe in enumerate(unrated_recipes[-10:], 1):  # Show maximum last 10
+    for i, recipe in enumerate(unrated_recipes[-10:], 1):
         date = datetime.fromisoformat(recipe["suggested_at"]).strftime("%d.%m.%Y %H:%M")
         print(f"{i}. {recipe['name']}")
         print(f"   {t(lang, 'suggested_on')}: {date}")
         print(f"   {t(lang, 'ingredients_label')}: {recipe['ingredients'][:60]}{'...' if len(recipe['ingredients']) > 60 else ''}")
         print()
-
+    
     print(f"0. {t(lang, 'other_dish')}")
-
+    
     while True:
         try:
             choice = int(input(f"\n{t(lang, 'which_recipe_cooked')} (0-{len(unrated_recipes[-10:])}): "))
             if 0 <= choice <= len(unrated_recipes[-10:]):
                 if choice == 0:
-                    return None
-                return unrated_recipes[-10:][choice - 1]["name"]
+                    return None, None
+                selected = unrated_recipes[-10:][choice - 1]
+                return selected["name"], selected["id"]
             print(f"{t(lang, 'please_enter_number')} 0 {t(lang, 'please_enter_number')} {len(unrated_recipes[-10:])}.")
         except ValueError:
             print(t(lang, "please_enter_valid"))
 
 def main():
     """Main program"""
+    # Initialize database
+    db.init_database()
+    
+    # Initialize services
+    user_service = UserService()
+    recipe_service = RecipeService()
+    rating_service = RatingService()
+    
     print("=" * 60)
     print("🍳  Welcome to the AI Recipe Assistant!")
     print("🍳  Willkommen beim KI-Rezept-Assistenten!")
     print("=" * 60)
-
+    
     # API key check
     api_key = os.environ.get("ANTHROPIC_API_KEY")
     if not api_key:
@@ -494,96 +445,115 @@ def main():
         print("Bitte setze deinen API-Key als Umgebungsvariable:")
         print("  export ANTHROPIC_API_KEY='your-api-key'")
         return
-
+    
     client = anthropic.Anthropic(api_key=api_key)
-
+    recipe_service.set_client(client)
+    
     # Select or create user
-    username = select_or_create_user()
+    user = select_or_create_user(user_service)
+    user_id = user['id']
+    username = user['username']
+    lang = user['language']
+    
     user_files = ensure_user_directory(username)
-
-    preferences = load_preferences(user_files["preferences"])
-    lang = preferences.get("language", "en")
-
+    
     print(f"\n✓ {t(lang, 'logged_in_as')}: {username}")
-
+    
     # Select mode
     print(f"\n{t(lang, 'what_to_do')}")
     print(f"1 - {t(lang, 'option_1')}")
     print(f"2 - {t(lang, 'option_2')}")
     print(f"3 - {t(lang, 'option_3')}")
     print(f"4 - {t(lang, 'option_4')}")
-
+    
     choice = input(f"\n{t(lang, 'your_choice')} (1-4): ").strip()
-
+    
     if choice == "1":
         # Request ingredients
         print(f"\n--- {t(lang, 'available_ingredients')} ---")
         print(t(lang, "list_ingredients"))
         print(t(lang, "ingredients_example"))
-
+        
         ingredients = input(f"\n{t(lang, 'your_ingredients')}: ").strip()
-
+        
         if not ingredients:
             print(t(lang, "no_ingredients"))
             return
-
+        
         print(f"\n🤔 {t(lang, 'thinking')}\n")
-
-        # Get recipe suggestion
-        suggestion = get_recipe_suggestion(client, ingredients, preferences,
-                                          user_files["preferences"], user_files["log"], lang)
+        
+        # Get recipe suggestion via service
+        suggestion = get_recipe_suggestion_ui(recipe_service, ingredients, user_id, lang, user_files["log"])
         print("=" * 60)
         print(suggestion)
         print("=" * 60)
-
+        
         # Ask if feedback should be given
         yes_no = "y/n" if lang == "en" else "j/n"
         cook_now = input(f"\n{t(lang, 'already_cooked')} ({yes_no}): ").lower()
         cooked = cook_now in ['y', 'j']
-
+        
         if cooked:
             dish_name = input(f"{t(lang, 'which_dish_cooked')} ")
-            get_feedback(client, dish_name, preferences, user_files["preferences"], lang)
-
+            # Try to find matching recipe_id
+            recent_recipes = recipe_service.get_user_recipes(user_id, limit=10)
+            recipe_id = None
+            for recipe in recent_recipes:
+                if recipe['name'].lower() == dish_name.lower():
+                    recipe_id = recipe['id']
+                    break
+            get_feedback_ui(rating_service, dish_name, user_id, lang, recipe_id)
+    
     elif choice == "2":
         # Direct feedback - with selection from suggested recipes
-        dish_name = select_recipe_from_suggestions(preferences, lang)
-
+        dish_name, recipe_id = select_recipe_from_suggestions_ui(recipe_service, user_id, lang)
+        
         if dish_name is None:
             # Manual entry
             dish_name = input(f"\n{t(lang, 'which_dish_cooked')} ")
-
+            recipe_id = None
+        
         if dish_name:
-            get_feedback(client, dish_name, preferences, user_files["preferences"], lang)
-
+            get_feedback_ui(rating_service, dish_name, user_id, lang, recipe_id)
+    
     elif choice == "3":
-        # Show preferences
+        # Show preferences from database
         print(f"\n--- {t(lang, 'your_preferences')} ---")
-        print(f"{t(lang, 'num_ratings')}: {len(preferences['ratings'])}")
-
-        if preferences["liked_dishes"]:
+        
+        # Get statistics
+        stats = rating_service.get_rating_stats(user_id)
+        print(f"{t(lang, 'num_ratings')}: {stats['total_ratings']}")
+        if stats['total_ratings'] > 0:
+            avg_label = "Durchschnittsbewertung" if lang == "de" else "Average rating"
+            print(f"{avg_label}: {stats['avg_rating']}/5.0")
+        
+        # Get liked dishes
+        liked = rating_service.get_liked_dishes(user_id)
+        if liked:
             print(f"\n{t(lang, 'dishes_liked')}")
-            for dish in preferences["liked_dishes"][-10:]:
+            for dish in liked[-10:]:
                 print(f"  ✓ {dish}")
-
-        if preferences["disliked_dishes"]:
+        
+        # Get disliked dishes
+        disliked = rating_service.get_disliked_dishes(user_id)
+        if disliked:
             print(f"\n{t(lang, 'dishes_disliked')}")
-            for dish in preferences["disliked_dishes"][-10:]:
+            for dish in disliked[-10:]:
                 print(f"  ✗ {dish}")
-
-        # Show suggested recipes
-        unrated = [r for r in preferences["suggested_recipes"] if not r.get("rated", False)]
+        
+        # Show unrated recipes
+        unrated = recipe_service.get_unrated_recipes(user_id)
         if unrated:
             print(f"\n{t(lang, 'unrated_suggestions')}: {len(unrated)}")
             for recipe in unrated[-5:]:
                 date = datetime.fromisoformat(recipe["suggested_at"]).strftime("%d.%m.%Y")
                 suggested_label = t(lang, "suggested_on").lower() if lang == "de" else "suggested on"
                 print(f"  • {recipe['name']} ({suggested_label} {date})")
-
+    
     elif choice == "4":
         # Show API log
         log_entries = load_api_log(user_files["log"])
-
+        
         if not log_entries:
             print(f"\n{t(lang, 'no_api_calls')}")
         else:
@@ -592,16 +562,16 @@ def main():
             print(f"1 - {t(lang, 'last_5')}")
             print(f"2 - {t(lang, 'last_10')}")
             print(f"3 - {t(lang, 'all_entries')}")
-
+            
             log_choice = input(f"\n{t(lang, 'your_choice')} (1-3): ").strip()
-
+            
             if log_choice == "1":
                 entries_to_show = log_entries[-5:]
             elif log_choice == "2":
                 entries_to_show = log_entries[-10:]
             else:
                 entries_to_show = log_entries
-
+            
             for i, entry in enumerate(entries_to_show, 1):
                 timestamp = datetime.fromisoformat(entry["timestamp"]).strftime("%d.%m.%Y %H:%M:%S")
                 print(f"\n{'='*60}")
@@ -615,10 +585,9 @@ def main():
                     print(entry["response"][:500] + f"...\n{t(lang, 'truncated')}")
                 else:
                     print(entry["response"])
-
+    
     else:
         print(t(lang, "invalid_selection"))
-
 
 if __name__ == "__main__":
     main()
