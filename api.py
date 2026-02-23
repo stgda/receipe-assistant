@@ -60,6 +60,7 @@ class UserResponse(BaseModel):
     id: int
     username: str
     language: str
+    default_servings: int
     created_at: str
     last_login: str
 
@@ -67,6 +68,8 @@ class RecipeSuggestRequest(BaseModel):
     user_id: int
     ingredients: str = Field(..., min_length=1)
     language: str = Field(default="en", pattern="^(en|de)$")
+    servings: int = Field(default=1, ge=1, le=20)
+    excluded_ingredients: Optional[List[str]] = None
 
 class RecipeSuggestResponse(BaseModel):
     success: bool
@@ -80,7 +83,12 @@ class RecipeResponse(BaseModel):
     user_id: int
     name: str
     ingredients: str
+    full_text: Optional[str]
+    servings: int
     suggested_at: str
+    rating: Optional[int] = None
+    comment: Optional[str] = None
+    rated_at: Optional[str] = None
 
 class RatingCreate(BaseModel):
     user_id: int
@@ -103,6 +111,10 @@ class RatingStatsResponse(BaseModel):
     avg_rating: float
     min_rating: int
     max_rating: int
+
+class UpdateServingsRequest(BaseModel):
+    user_id: int
+    servings: int = Field(..., ge=1, le=20)
 
 class PreferencesResponse(BaseModel):
     liked_dishes: List[str]
@@ -153,12 +165,6 @@ async def login_user(login: UserLogin):
     else:
         raise HTTPException(status_code=404, detail=result['error'])
 
-@app.get("/api/users", response_model=List[UserResponse])
-async def list_users():
-    """Get list of all users"""
-    users = user_service.list_users()
-    return users
-
 @app.get("/api/users/{user_id}", response_model=UserResponse)
 async def get_user(user_id: int):
     """Get user by ID"""
@@ -168,6 +174,19 @@ async def get_user(user_id: int):
         return user
     else:
         raise HTTPException(status_code=404, detail="User not found")
+
+
+@app.put("/api/users/servings")
+async def update_servings(request: UpdateServingsRequest):
+    """Update user's default servings preference"""
+    result = user_service.update_servings(request.user_id, request.servings)
+    
+    if result['success']:
+        # Return updated user
+        user = user_service.get_user_by_id(request.user_id)
+        return user
+    else:
+        raise HTTPException(status_code=400, detail=result['error'])
 
 
 # ============================================================================
@@ -186,7 +205,9 @@ async def suggest_recipes(request: RecipeSuggestRequest):
     result = recipe_service.suggest_recipes(
         request.user_id,
         request.ingredients,
-        request.language
+        request.language,
+        request.servings,
+        request.excluded_ingredients
     )
     
     return result
@@ -201,6 +222,20 @@ async def get_user_recipes(user_id: int, limit: Optional[int] = None):
 async def get_unrated_recipes(user_id: int):
     """Get unrated recipes for a user"""
     recipes = recipe_service.get_unrated_recipes(user_id)
+    return recipes
+
+
+@app.get("/api/recipes/filtered/{user_id}", response_model=List[RecipeResponse])
+async def get_filtered_recipes(
+    user_id: int,
+    min_rating: Optional[int] = None,
+    max_rating: Optional[int] = None,
+    include_unrated: bool = True
+):
+    """Get recipes filtered by rating"""
+    recipes = recipe_service.get_recipes_with_filter(
+        user_id, min_rating, max_rating, include_unrated
+    )
     return recipes
 
 

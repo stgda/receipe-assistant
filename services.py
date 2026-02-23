@@ -29,7 +29,7 @@ class RecipeService:
         """Set Anthropic client"""
         self.client = client
     
-    def suggest_recipes(self, user_id, ingredients, language='en'):
+    def suggest_recipes(self, user_id, ingredients, language='en', servings=1, excluded_ingredients=None):
         """
         Get recipe suggestions from Claude API
         
@@ -37,6 +37,8 @@ class RecipeService:
             user_id: User ID integer
             ingredients: String of available ingredients
             language: Language code for responses
+            servings: Number of servings/persons
+            excluded_ingredients: List of ingredients to exclude
         
         Returns:
             Dictionary with:
@@ -65,37 +67,54 @@ class RecipeService:
                 pref_label = "Gerichte, die dem Nutzer nicht geschmeckt haben" if language == "de" else "Dishes the user disliked"
                 preference_context += f"\n{pref_label}: {', '.join(disliked[-5:])}"
             
+            # Add excluded ingredients context
+            if excluded_ingredients:
+                if language == "de":
+                    preference_context += f"\n\nWICHTIG: Diese Zutaten sind NICHT verfügbar und dürfen NICHT verwendet werden: {', '.join(excluded_ingredients)}"
+                else:
+                    preference_context += f"\n\nIMPORTANT: These ingredients are NOT available and must NOT be used: {', '.join(excluded_ingredients)}"
+            
             # Create language-specific prompt
             if language == "de":
+                servings_text = f"{servings} Person" if servings == 1 else f"{servings} Personen"
                 prompt = f"""Du bist ein hilfreicher Koch-Assistent. Der Nutzer möchte ein Mittagessen kochen.
 
 Verfügbare Zutaten: {ingredients}
+Anzahl Personen: {servings_text}
 {preference_context}
 
-Bitte schlage 2-3 passende Rezepte vor, die mit diesen Zutaten zubereitet werden können.
+Bitte schlage 2-3 passende Rezepte vor, die mit diesen Zutaten für {servings_text} zubereitet werden können.
 
-WICHTIG: Formatiere jeden Rezeptnamen als Markdown-Überschrift mit '## Rezeptname' (zwei Hashtags).
+WICHTIG: 
+- Formatiere jeden Rezeptnamen als Markdown-Überschrift mit '## Rezeptname' (zwei Hashtags).
+- Alle Mengenangaben müssen für {servings_text} sein.
+- Verwende NUR die verfügbaren Zutaten oder Grundzutaten wie Salz, Pfeffer, Öl.
 
 Gib für jedes Rezept an:
 - Name des Gerichts (als ## Überschrift)
-- Benötigte Zutaten (markiere, welche vorhanden sind)
+- Benötigte Zutaten mit genauen Mengen für {servings_text}
 - Kurze Zubereitungsanleitung (3-5 Schritte)
 - Zubereitungszeit
 
 Halte die Vorschläge prägnant und praktisch umsetzbar."""
             else:
+                servings_text = f"{servings} person" if servings == 1 else f"{servings} people"
                 prompt = f"""You are a helpful cooking assistant. The user wants to cook lunch.
 
 Available ingredients: {ingredients}
+Number of servings: {servings_text}
 {preference_context}
 
-Please suggest 2-3 suitable recipes that can be prepared with these ingredients.
+Please suggest 2-3 suitable recipes that can be prepared with these ingredients for {servings_text}.
 
-IMPORTANT: Format each recipe name as a Markdown heading with '## Recipe Name' (two hashtags).
+IMPORTANT: 
+- Format each recipe name as a Markdown heading with '## Recipe Name' (two hashtags).
+- All quantities must be for {servings_text}.
+- Use ONLY the available ingredients or basic ingredients like salt, pepper, oil.
 
 For each recipe, provide:
 - Name of the dish (as ## heading)
-- Required ingredients (mark which ones are available)
+- Required ingredients with exact quantities for {servings_text}
 - Brief preparation instructions (3-5 steps)
 - Preparation time
 
@@ -104,7 +123,7 @@ Keep the suggestions concise and practically feasible."""
             # Call Claude API
             message = self.client.messages.create(
                 model="claude-sonnet-4-20250514",
-                max_tokens=1000,
+                max_tokens=1500,
                 messages=[
                     {"role": "user", "content": prompt}
                 ]
@@ -115,10 +134,10 @@ Keep the suggestions concise and practically feasible."""
             # Parse recipe names
             recipe_names = self._parse_recipe_names(response_text)
             
-            # Save recipes to database
+            # Save recipes to database with full text and servings
             recipe_ids = []
             for name in recipe_names:
-                recipe_id = db.create_recipe(user_id, name, ingredients)
+                recipe_id = db.create_recipe(user_id, name, ingredients, response_text, servings)
                 if recipe_id:
                     recipe_ids.append(recipe_id)
             
@@ -184,6 +203,21 @@ Keep the suggestions concise and practically feasible."""
             List of recipe dictionaries
         """
         return db.get_user_recipes(user_id, limit)
+    
+    def get_recipes_with_filter(self, user_id, min_rating=None, max_rating=None, include_unrated=True):
+        """
+        Get recipes filtered by rating
+        
+        Args:
+            user_id: User ID integer
+            min_rating: Minimum rating (1-5)
+            max_rating: Maximum rating (1-5)
+            include_unrated: Include unrated recipes
+        
+        Returns:
+            List of recipe dictionaries with rating info
+        """
+        return db.get_recipes_with_ratings(user_id, min_rating, max_rating, include_unrated)
 
 
 class RatingService:
@@ -425,4 +459,33 @@ class UserService:
             return {
                 'success': False,
                 'error': 'Failed to update language'
+            }
+    
+    def update_servings(self, user_id, servings):
+        """
+        Update user's default servings preference
+        
+        Args:
+            user_id: User ID integer
+            servings: Number of servings
+        
+        Returns:
+            Dictionary with:
+                - success: Boolean
+                - error: Error message if failed
+        """
+        if servings < 1 or servings > 20:
+            return {
+                'success': False,
+                'error': 'Servings must be between 1 and 20'
+            }
+        
+        success = db.update_user_servings(user_id, servings)
+        
+        if success:
+            return {'success': True}
+        else:
+            return {
+                'success': False,
+                'error': 'Failed to update servings'
             }

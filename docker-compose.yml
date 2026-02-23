@@ -1,0 +1,44 @@
+version: '3.8'
+
+services:
+  recipe-assistant:
+    build: .
+    container_name: recipe-assistant
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+    volumes:
+      # Persist database
+      - ./data:/data
+      # Optional: Mount users directory for logs
+      - ./users:/app/users
+    networks:
+      - recipe-network
+
+  # Optional: Tailscale sidecar (if you want Tailscale in Docker)
+  tailscale:
+    image: tailscale/tailscale:latest
+    container_name: recipe-tailscale
+    restart: unless-stopped
+    hostname: recipe-assistant
+    environment:
+      - TS_AUTHKEY=${TS_AUTHKEY}
+      - TS_STATE_DIR=/var/lib/tailscale
+      - TS_SERVE_CONFIG=/config/serve.json
+    volumes:
+      - tailscale-data:/var/lib/tailscale
+      - ./tailscale-config:/config
+    cap_add:
+      - NET_ADMIN
+      - SYS_MODULE
+    networks:
+      - recipe-network
+
+networks:
+  recipe-network:
+    driver: bridge
+
+volumes:
+  tailscale-data:

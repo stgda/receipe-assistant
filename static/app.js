@@ -4,57 +4,10 @@ let currentLanguage = 'en';
 let selectedRating = null;
 let selectedRecipeId = null;
 let selectedDishName = null;
+let currentFilter = 'all';
 
 // API base URL
 const API_BASE = '';
-
-// Translations
-const translations = {
-    en: {
-        suggestTitle: 'Get Recipe Suggestions',
-        suggestSubtitle: 'Tell me what ingredients you have',
-        ingredientsLabel: 'Your Ingredients:',
-        feedbackTitle: 'Give Feedback',
-        preferencesTitle: 'Your Preferences',
-        likedTitle: 'Liked Dishes',
-        dislikedTitle: 'Disliked Dishes',
-        commentLabel: 'Comment (optional):',
-        feedbackFormTitle: 'Rate:',
-        noUnratedRecipes: 'No unrated recipes found. Get some suggestions first!',
-        totalRatings: 'Total Ratings',
-        avgRating: 'Average Rating'
-    },
-    de: {
-        suggestTitle: 'Rezeptvorschläge erhalten',
-        suggestSubtitle: 'Sag mir, welche Zutaten du hast',
-        ingredientsLabel: 'Deine Zutaten:',
-        feedbackTitle: 'Feedback geben',
-        preferencesTitle: 'Deine Präferenzen',
-        likedTitle: 'Gemochte Gerichte',
-        dislikedTitle: 'Nicht gemochte Gerichte',
-        commentLabel: 'Kommentar (optional):',
-        feedbackFormTitle: 'Bewerte:',
-        noUnratedRecipes: 'Keine unbewerteten Rezepte gefunden. Hole dir zuerst Vorschläge!',
-        totalRatings: 'Anzahl Bewertungen',
-        avgRating: 'Durchschnittsbewertung'
-    }
-};
-
-function t(key) {
-    return translations[currentLanguage]?.[key] || translations.en[key] || key;
-}
-
-function updateUILanguage() {
-    document.getElementById('suggestTitle').textContent = t('suggestTitle');
-    document.getElementById('suggestSubtitle').textContent = t('suggestSubtitle');
-    document.getElementById('ingredientsLabel').textContent = t('ingredientsLabel');
-    document.getElementById('feedbackTitle').textContent = t('feedbackTitle');
-    document.getElementById('preferencesTitle').textContent = t('preferencesTitle');
-    document.getElementById('likedTitle').textContent = t('likedTitle');
-    document.getElementById('dislikedTitle').textContent = t('dislikedTitle');
-    document.getElementById('commentLabel').textContent = t('commentLabel');
-    document.getElementById('noUnratedRecipes').textContent = t('noUnratedRecipes');
-}
 
 // Utility functions
 function showLoading() {
@@ -70,7 +23,7 @@ function showError(message) {
 }
 
 function showSuccess(message) {
-    alert('Success: ' + message);
+    alert(message);
 }
 
 // API functions
@@ -97,38 +50,14 @@ async function apiCall(endpoint, method = 'GET', body = null) {
 }
 
 // User management
-async function loadUsers() {
-    try {
-        showLoading();
-        const users = await apiCall('/api/users');
-        
-        const userList = document.getElementById('userList');
-        userList.innerHTML = '';
-        
-        if (users.length === 0) {
-            userList.innerHTML = '<p class="info-text">No users yet. Create one to get started!</p>';
-        } else {
-            users.forEach(user => {
-                const userDiv = document.createElement('div');
-                userDiv.className = 'user-item';
-                userDiv.innerHTML = `
-                    <div class="user-info">
-                        <div class="user-name">${user.username}</div>
-                        <div class="user-language">${user.language === 'en' ? 'English' : 'Deutsch'}</div>
-                    </div>
-                `;
-                userDiv.onclick = () => loginUser(user.username);
-                userList.appendChild(userDiv);
-            });
-        }
-    } catch (error) {
-        showError(error.message);
-    } finally {
-        hideLoading();
+async function loginUser() {
+    const username = document.getElementById('usernameInput').value.trim();
+    
+    if (!username) {
+        showError('Please enter a username');
+        return;
     }
-}
-
-async function loginUser(username) {
+    
     try {
         showLoading();
         const user = await apiCall('/api/users/login', 'POST', { username });
@@ -136,22 +65,26 @@ async function loginUser(username) {
         currentUser = user;
         currentLanguage = user.language;
         
+        // Set default servings
+        document.getElementById('servings').value = user.default_servings || 1;
+        
         document.getElementById('loginScreen').style.display = 'none';
         document.getElementById('appScreen').style.display = 'block';
         document.getElementById('currentUser').textContent = user.username;
         
-        updateUILanguage();
         loadUnratedRecipes();
         loadPreferences();
     } catch (error) {
-        showError(error.message);
+        // User not found - show create account option
+        document.getElementById('loginError').style.display = 'none';
+        document.getElementById('createUserPrompt').style.display = 'block';
     } finally {
         hideLoading();
     }
 }
 
 async function createUser() {
-    const username = document.getElementById('newUsername').value.trim();
+    const username = document.getElementById('usernameInput').value.trim();
     const language = document.getElementById('newUserLanguage').value;
     
     if (!username) {
@@ -164,15 +97,30 @@ async function createUser() {
         const user = await apiCall('/api/users/create', 'POST', { username, language });
         
         showSuccess('User created successfully!');
-        document.getElementById('newUserForm').style.display = 'none';
-        document.getElementById('newUsername').value = '';
         
-        await loadUsers();
+        // Auto-login
+        currentUser = user;
+        currentLanguage = user.language;
+        
+        document.getElementById('servings').value = user.default_servings || 1;
+        
+        document.getElementById('loginScreen').style.display = 'none';
+        document.getElementById('appScreen').style.display = 'block';
+        document.getElementById('currentUser').textContent = user.username;
+        
+        loadUnratedRecipes();
+        loadPreferences();
     } catch (error) {
         showError(error.message);
     } finally {
         hideLoading();
     }
+}
+
+function cancelCreate() {
+    document.getElementById('createUserPrompt').style.display = 'none';
+    document.getElementById('usernameInput').value = '';
+    document.getElementById('usernameInput').focus();
 }
 
 function logout() {
@@ -181,25 +129,58 @@ function logout() {
     
     document.getElementById('loginScreen').style.display = 'block';
     document.getElementById('appScreen').style.display = 'none';
+    document.getElementById('usernameInput').value = '';
+    document.getElementById('createUserPrompt').style.display = 'none';
+}
+
+// Servings management
+async function saveServings() {
+    const servings = parseInt(document.getElementById('servings').value);
     
-    loadUsers();
+    if (servings < 1 || servings > 20) {
+        showError('Servings must be between 1 and 20');
+        return;
+    }
+    
+    try {
+        showLoading();
+        await apiCall('/api/users/servings', 'PUT', {
+            user_id: currentUser.id,
+            servings: servings
+        });
+        
+        currentUser.default_servings = servings;
+        showSuccess('Default servings saved!');
+    } catch (error) {
+        showError(error.message);
+    } finally {
+        hideLoading();
+    }
 }
 
 // Recipe suggestions
 async function getSuggestions() {
     const ingredients = document.getElementById('ingredients').value.trim();
+    const servings = parseInt(document.getElementById('servings').value);
+    const excludedInput = document.getElementById('excludedIngredients').value.trim();
     
     if (!ingredients) {
         showError('Please enter some ingredients');
         return;
     }
     
+    const excludedIngredients = excludedInput 
+        ? excludedInput.split(',').map(i => i.trim()).filter(i => i)
+        : null;
+    
     try {
         showLoading();
         const result = await apiCall('/api/recipes/suggest', 'POST', {
             user_id: currentUser.id,
             ingredients,
-            language: currentLanguage
+            language: currentLanguage,
+            servings,
+            excluded_ingredients: excludedIngredients
         });
         
         if (result.success) {
@@ -208,7 +189,6 @@ async function getSuggestions() {
                 <div class="suggestion-content">${result.raw_response}</div>
             `;
             
-            // Reload unrated recipes
             loadUnratedRecipes();
         } else {
             showError(result.error || 'Failed to get suggestions');
@@ -236,8 +216,10 @@ async function loadUnratedRecipes() {
             container.innerHTML = recipes.map(recipe => `
                 <div class="recipe-item" onclick="selectRecipeForRating(${recipe.id}, '${recipe.name.replace(/'/g, "\\'")}')">
                     <div class="recipe-name">${recipe.name}</div>
-                    <div class="recipe-ingredients">${recipe.ingredients.substring(0, 100)}...</div>
-                    <div class="recipe-date">${new Date(recipe.suggested_at).toLocaleDateString()}</div>
+                    <div class="recipe-ingredients">${recipe.ingredients.substring(0, 100)}${recipe.ingredients.length > 100 ? '...' : ''}</div>
+                    <div class="recipe-date">
+                        ${recipe.servings} servings • ${new Date(recipe.suggested_at).toLocaleDateString()}
+                    </div>
                 </div>
             `).join('');
         }
@@ -255,7 +237,6 @@ function selectRecipeForRating(recipeId, dishName) {
     document.getElementById('feedbackForm').style.display = 'block';
     document.getElementById('comment').value = '';
     
-    // Clear selected rating buttons
     document.querySelectorAll('.rating-btn').forEach(btn => {
         btn.classList.remove('selected');
     });
@@ -290,6 +271,10 @@ async function submitFeedback() {
         cancelFeedback();
         loadUnratedRecipes();
         loadPreferences();
+        
+        if (document.getElementById('historyTab').classList.contains('active')) {
+            loadRecipeHistory();
+        }
     } catch (error) {
         showError(error.message);
     } finally {
@@ -297,25 +282,130 @@ async function submitFeedback() {
     }
 }
 
+// Recipe history with filtering
+async function loadRecipeHistory() {
+    try {
+        showLoading();
+        let recipes;
+        
+        if (currentFilter === 'all') {
+            recipes = await apiCall(`/api/recipes/filtered/${currentUser.id}?include_unrated=true`);
+        } else if (currentFilter === 'unrated') {
+            recipes = await apiCall(`/api/recipes/unrated/${currentUser.id}`);
+        } else {
+            const rating = parseInt(currentFilter);
+            let min_rating, max_rating;
+            
+            if (rating === 5) {
+                min_rating = 5;
+                max_rating = 5;
+            } else if (rating === 4) {
+                min_rating = 4;
+                max_rating = 5;
+            } else if (rating === 3) {
+                min_rating = 3;
+                max_rating = 5;
+            } else if (rating === 2) {
+                min_rating = 1;
+                max_rating = 2;
+            } else if (rating === 1) {
+                min_rating = 1;
+                max_rating = 1;
+            }
+            
+            recipes = await apiCall(
+                `/api/recipes/filtered/${currentUser.id}?min_rating=${min_rating}&max_rating=${max_rating}&include_unrated=false`
+            );
+        }
+        
+        const container = document.getElementById('recipeHistory');
+        
+        if (recipes.length === 0) {
+            container.innerHTML = '<p class="info-text">No recipes match the selected filter.</p>';
+        } else {
+            container.innerHTML = recipes.map(recipe => {
+                const ratingText = recipe.rating 
+                    ? `${'⭐'.repeat(recipe.rating)}` 
+                    : 'Not rated';
+                
+                return `
+                    <div class="recipe-item" onclick="showRecipeDetail(${recipe.id})">
+                        <div class="recipe-name">${recipe.name}</div>
+                        <div class="recipe-ingredients">
+                            ${recipe.servings} servings • ${recipe.ingredients.substring(0, 80)}${recipe.ingredients.length > 80 ? '...' : ''}
+                        </div>
+                        <div class="recipe-date">
+                            ${ratingText} • ${new Date(recipe.suggested_at).toLocaleDateString()}
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+    } catch (error) {
+        console.error('Failed to load recipe history:', error);
+    } finally {
+        hideLoading();
+    }
+}
+
+async function showRecipeDetail(recipeId) {
+    try {
+        showLoading();
+        const recipe = await apiCall(`/api/recipes/user/${currentUser.id}`);
+        const selectedRecipe = recipe.find(r => r.id === recipeId);
+        
+        if (!selectedRecipe) {
+            showError('Recipe not found');
+            return;
+        }
+        
+        document.getElementById('recipeHistory').style.display = 'none';
+        document.querySelector('.filter-controls').style.display = 'none';
+        document.getElementById('recipeDetail').style.display = 'block';
+        
+        document.getElementById('detailName').textContent = selectedRecipe.name;
+        document.getElementById('detailServings').textContent = selectedRecipe.servings;
+        document.getElementById('detailIngredients').textContent = selectedRecipe.ingredients;
+        document.getElementById('detailDate').textContent = new Date(selectedRecipe.suggested_at).toLocaleString();
+        
+        if (selectedRecipe.rating) {
+            document.getElementById('detailRating').style.display = 'block';
+            document.getElementById('detailRatingValue').textContent = '⭐'.repeat(selectedRecipe.rating);
+        } else {
+            document.getElementById('detailRating').style.display = 'none';
+        }
+        
+        document.getElementById('detailFullText').textContent = selectedRecipe.full_text || 'No details available';
+    } catch (error) {
+        showError(error.message);
+    } finally {
+        hideLoading();
+    }
+}
+
+function closeRecipeDetail() {
+    document.getElementById('recipeHistory').style.display = 'block';
+    document.querySelector('.filter-controls').style.display = 'block';
+    document.getElementById('recipeDetail').style.display = 'none';
+}
+
 // Preferences
 async function loadPreferences() {
     try {
         const prefs = await apiCall(`/api/preferences/${currentUser.id}`);
         
-        // Display stats
         const statsDiv = document.getElementById('statsDisplay');
         statsDiv.innerHTML = `
             <div class="stat-card">
                 <div class="stat-value">${prefs.stats.total_ratings}</div>
-                <div class="stat-label">${t('totalRatings')}</div>
+                <div class="stat-label">Total Ratings</div>
             </div>
             <div class="stat-card">
                 <div class="stat-value">${prefs.stats.avg_rating.toFixed(1)}</div>
-                <div class="stat-label">${t('avgRating')}</div>
+                <div class="stat-label">Average Rating</div>
             </div>
         `;
         
-        // Display liked dishes
         const likedList = document.getElementById('likedList');
         if (prefs.liked_dishes.length === 0) {
             likedList.innerHTML = '<li style="list-style: none;">No liked dishes yet</li>';
@@ -325,7 +415,6 @@ async function loadPreferences() {
             ).join('');
         }
         
-        // Display disliked dishes
         const dislikedList = document.getElementById('dislikedList');
         dislikedList.parentElement.className = 'dish-list disliked';
         if (prefs.disliked_dishes.length === 0) {
@@ -342,44 +431,38 @@ async function loadPreferences() {
 
 // Tab switching
 function switchTab(tabName) {
-    // Hide all tabs
     document.querySelectorAll('.tab-content').forEach(tab => {
         tab.classList.remove('active');
     });
     
-    // Remove active from all buttons
     document.querySelectorAll('.tab-btn').forEach(btn => {
         btn.classList.remove('active');
     });
     
-    // Show selected tab
     document.getElementById(tabName + 'Tab').classList.add('active');
-    
-    // Activate button
     document.querySelector(`[data-tab="${tabName}"]`).classList.add('active');
     
-    // Load data for the tab
     if (tabName === 'feedback') {
         loadUnratedRecipes();
     } else if (tabName === 'preferences') {
         loadPreferences();
+    } else if (tabName === 'history') {
+        loadRecipeHistory();
     }
 }
 
 // Event listeners
 document.addEventListener('DOMContentLoaded', () => {
     // Login screen
-    loadUsers();
-    
-    document.getElementById('showNewUserBtn').onclick = () => {
-        document.getElementById('newUserForm').style.display = 'block';
-    };
-    
-    document.getElementById('cancelNewUserBtn').onclick = () => {
-        document.getElementById('newUserForm').style.display = 'none';
-    };
-    
+    document.getElementById('loginBtn').onclick = loginUser;
     document.getElementById('createUserBtn').onclick = createUser;
+    document.getElementById('cancelCreateBtn').onclick = cancelCreate;
+    
+    document.getElementById('usernameInput').onkeypress = (e) => {
+        if (e.key === 'Enter') {
+            loginUser();
+        }
+    };
     
     // App screen
     document.getElementById('logoutBtn').onclick = logout;
@@ -388,6 +471,9 @@ document.addEventListener('DOMContentLoaded', () => {
     document.querySelectorAll('.tab-btn').forEach(btn => {
         btn.onclick = () => switchTab(btn.dataset.tab);
     });
+    
+    // Servings
+    document.getElementById('saveServingsBtn').onclick = saveServings;
     
     // Suggest tab
     document.getElementById('getSuggestionsBtn').onclick = getSuggestions;
@@ -404,16 +490,22 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('submitFeedbackBtn').onclick = submitFeedback;
     document.getElementById('cancelFeedbackBtn').onclick = cancelFeedback;
     
-    // Enter key support
+    // History tab filter buttons
+    document.querySelectorAll('.filter-btn').forEach(btn => {
+        btn.onclick = () => {
+            currentFilter = btn.dataset.filter;
+            document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            loadRecipeHistory();
+        };
+    });
+    
+    document.getElementById('closeDetailBtn').onclick = closeRecipeDetail;
+    
+    // Keyboard shortcuts
     document.getElementById('ingredients').onkeypress = (e) => {
         if (e.key === 'Enter' && e.ctrlKey) {
             getSuggestions();
-        }
-    };
-    
-    document.getElementById('newUsername').onkeypress = (e) => {
-        if (e.key === 'Enter') {
-            createUser();
         }
     };
 });

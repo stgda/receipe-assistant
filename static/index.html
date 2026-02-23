@@ -8,27 +8,29 @@
 </head>
 <body>
     <div class="container">
-        <!-- Login/User Selection Screen -->
+        <!-- Login Screen -->
         <div id="loginScreen" class="screen">
             <div class="card">
                 <h1>🍳 Recipe Assistant</h1>
                 <p class="subtitle">AI-powered recipe suggestions</p>
                 
-                <div id="userList" class="user-list">
-                    <!-- Users will be loaded here -->
+                <div class="form-group">
+                    <label for="usernameInput">Username:</label>
+                    <input type="text" id="usernameInput" placeholder="Enter your username" class="input">
                 </div>
                 
-                <button id="showNewUserBtn" class="btn btn-secondary">Create New User</button>
+                <button id="loginBtn" class="btn btn-primary btn-large">Login</button>
                 
-                <div id="newUserForm" class="form-group" style="display: none;">
-                    <h3>Create New User</h3>
-                    <input type="text" id="newUsername" placeholder="Username" class="input">
+                <div id="loginError" class="error" style="display: none;"></div>
+                
+                <div id="createUserPrompt" style="display: none; margin-top: 20px;">
+                    <p>User not found. Would you like to create a new account?</p>
                     <select id="newUserLanguage" class="input">
                         <option value="en">English</option>
                         <option value="de">Deutsch</option>
                     </select>
-                    <button id="createUserBtn" class="btn btn-primary">Create</button>
-                    <button id="cancelNewUserBtn" class="btn btn-secondary">Cancel</button>
+                    <button id="createUserBtn" class="btn btn-primary">Create Account</button>
+                    <button id="cancelCreateBtn" class="btn btn-secondary">Cancel</button>
                 </div>
             </div>
         </div>
@@ -48,6 +50,7 @@
             <div class="tabs">
                 <button class="tab-btn active" data-tab="suggest">Get Suggestions</button>
                 <button class="tab-btn" data-tab="feedback">Give Feedback</button>
+                <button class="tab-btn" data-tab="history">Recipe History</button>
                 <button class="tab-btn" data-tab="preferences">Preferences</button>
             </div>
 
@@ -55,7 +58,14 @@
             <div id="suggestTab" class="tab-content active">
                 <div class="card">
                     <h2 id="suggestTitle">Get Recipe Suggestions</h2>
-                    <p id="suggestSubtitle">Tell me what ingredients you have</p>
+                    
+                    <div class="form-group">
+                        <label for="servings">Number of servings:</label>
+                        <div class="servings-control">
+                            <input type="number" id="servings" class="input-small" min="1" max="20" value="1">
+                            <button id="saveServingsBtn" class="btn btn-secondary btn-small">Save as default</button>
+                        </div>
+                    </div>
                     
                     <div class="form-group">
                         <label for="ingredients" id="ingredientsLabel">Your Ingredients:</label>
@@ -65,6 +75,13 @@
                             rows="3" 
                             placeholder="e.g., tomatoes, mozzarella, basil, pasta"
                         ></textarea>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="excludedIngredients">Ingredients NOT available (optional):</label>
+                        <input type="text" id="excludedIngredients" class="input" 
+                               placeholder="e.g., cream, butter, wine">
+                        <small class="help-text">Comma-separated list of ingredients to exclude</small>
                     </div>
                     
                     <button id="getSuggestionsBtn" class="btn btn-primary btn-large">
@@ -80,12 +97,10 @@
                 <div class="card">
                     <h2 id="feedbackTitle">Give Feedback</h2>
                     
-                    <div id="unratedRecipes" class="recipe-list">
-                        <!-- Unrated recipes will be loaded here -->
-                    </div>
+                    <div id="unratedRecipes" class="recipe-list"></div>
                     
                     <div id="feedbackForm" class="feedback-form" style="display: none;">
-                        <h3 id="feedbackFormTitle">Rate: <span id="dishNameDisplay"></span></h3>
+                        <h3>Rate: <span id="dishNameDisplay"></span></h3>
                         
                         <div class="rating-buttons">
                             <button class="rating-btn" data-rating="1">1 ⭐</button>
@@ -96,7 +111,7 @@
                         </div>
                         
                         <div class="form-group">
-                            <label for="comment" id="commentLabel">Comment (optional):</label>
+                            <label for="comment">Comment (optional):</label>
                             <textarea id="comment" class="textarea" rows="3"></textarea>
                         </div>
                         
@@ -110,14 +125,46 @@
                 </div>
             </div>
 
+            <!-- History Tab -->
+            <div id="historyTab" class="tab-content">
+                <div class="card">
+                    <h2>Recipe History</h2>
+                    
+                    <div class="filter-controls">
+                        <label>Filter by rating:</label>
+                        <div class="filter-buttons">
+                            <button class="filter-btn active" data-filter="all">All</button>
+                            <button class="filter-btn" data-filter="5">5 ⭐</button>
+                            <button class="filter-btn" data-filter="4">4+ ⭐</button>
+                            <button class="filter-btn" data-filter="3">3+ ⭐</button>
+                            <button class="filter-btn" data-filter="2">2- ⭐</button>
+                            <button class="filter-btn" data-filter="1">1 ⭐</button>
+                            <button class="filter-btn" data-filter="unrated">Unrated</button>
+                        </div>
+                    </div>
+                    
+                    <div id="recipeHistory" class="recipe-history"></div>
+                    
+                    <div id="recipeDetail" class="recipe-detail" style="display: none;">
+                        <button id="closeDetailBtn" class="btn btn-secondary">← Back to list</button>
+                        <h3 id="detailName"></h3>
+                        <div class="detail-info">
+                            <p><strong>Servings:</strong> <span id="detailServings"></span></p>
+                            <p><strong>Ingredients:</strong> <span id="detailIngredients"></span></p>
+                            <p><strong>Suggested:</strong> <span id="detailDate"></span></p>
+                            <p id="detailRating" style="display: none;"><strong>Your rating:</strong> <span id="detailRatingValue"></span></p>
+                        </div>
+                        <div id="detailFullText" class="recipe-full-text"></div>
+                    </div>
+                </div>
+            </div>
+
             <!-- Preferences Tab -->
             <div id="preferencesTab" class="tab-content">
                 <div class="card">
                     <h2 id="preferencesTitle">Your Preferences</h2>
                     
-                    <div id="statsDisplay" class="stats">
-                        <!-- Stats will be loaded here -->
-                    </div>
+                    <div id="statsDisplay" class="stats"></div>
                     
                     <div id="likedDishes" class="dish-list">
                         <h3 id="likedTitle">Liked Dishes</h3>

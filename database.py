@@ -37,6 +37,7 @@ def init_database():
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 username TEXT UNIQUE NOT NULL,
                 language TEXT NOT NULL DEFAULT 'en',
+                default_servings INTEGER NOT NULL DEFAULT 1,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 last_login TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
@@ -49,6 +50,8 @@ def init_database():
                 user_id INTEGER NOT NULL,
                 name TEXT NOT NULL,
                 ingredients TEXT NOT NULL,
+                full_text TEXT,
+                servings INTEGER DEFAULT 1,
                 suggested_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
             )
@@ -91,6 +94,25 @@ def init_database():
         """)
         
         conn.commit()
+        
+        # Add columns to existing tables if they don't exist (migration)
+        try:
+            cursor.execute("ALTER TABLE users ADD COLUMN default_servings INTEGER NOT NULL DEFAULT 1")
+            conn.commit()
+        except:
+            pass  # Column already exists
+        
+        try:
+            cursor.execute("ALTER TABLE recipes ADD COLUMN full_text TEXT")
+            conn.commit()
+        except:
+            pass  # Column already exists
+        
+        try:
+            cursor.execute("ALTER TABLE recipes ADD COLUMN servings INTEGER DEFAULT 1")
+            conn.commit()
+        except:
+            pass  # Column already exists
 
 
 def create_user(username, language='en'):
@@ -130,7 +152,7 @@ def get_user(username):
     with get_db_connection() as conn:
         cursor = conn.cursor()
         cursor.execute(
-            "SELECT id, username, language, created_at, last_login FROM users WHERE username = ?",
+            "SELECT id, username, language, default_servings, created_at, last_login FROM users WHERE username = ?",
             (username,)
         )
         row = cursor.fetchone()
@@ -140,6 +162,7 @@ def get_user(username):
                 'id': row['id'],
                 'username': row['username'],
                 'language': row['language'],
+                'default_servings': row['default_servings'],
                 'created_at': row['created_at'],
                 'last_login': row['last_login']
             }
@@ -159,7 +182,7 @@ def get_user_by_id(user_id):
     with get_db_connection() as conn:
         cursor = conn.cursor()
         cursor.execute(
-            "SELECT id, username, language, created_at, last_login FROM users WHERE id = ?",
+            "SELECT id, username, language, default_servings, created_at, last_login FROM users WHERE id = ?",
             (user_id,)
         )
         row = cursor.fetchone()
@@ -169,6 +192,7 @@ def get_user_by_id(user_id):
                 'id': row['id'],
                 'username': row['username'],
                 'language': row['language'],
+                'default_servings': row['default_servings'],
                 'created_at': row['created_at'],
                 'last_login': row['last_login']
             }
@@ -185,7 +209,7 @@ def list_all_users():
     with get_db_connection() as conn:
         cursor = conn.cursor()
         cursor.execute(
-            "SELECT id, username, language, created_at, last_login FROM users ORDER BY username"
+            "SELECT id, username, language, default_servings, created_at, last_login FROM users ORDER BY username"
         )
         rows = cursor.fetchall()
         
@@ -194,6 +218,7 @@ def list_all_users():
                 'id': row['id'],
                 'username': row['username'],
                 'language': row['language'],
+                'default_servings': row['default_servings'],
                 'created_at': row['created_at'],
                 'last_login': row['last_login']
             }
@@ -217,6 +242,26 @@ def update_user_language(username, language):
         cursor.execute(
             "UPDATE users SET language = ? WHERE username = ?",
             (language, username)
+        )
+        return cursor.rowcount > 0
+
+
+def update_user_servings(user_id, servings):
+    """
+    Update user's default servings preference
+    
+    Args:
+        user_id: User ID integer
+        servings: Number of servings (default portions)
+    
+    Returns:
+        True if successful, False if user not found
+    """
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            "UPDATE users SET default_servings = ? WHERE id = ?",
+            (servings, user_id)
         )
         return cursor.rowcount > 0
 
@@ -295,7 +340,7 @@ def get_user_count():
 # Recipe Management Functions
 # ============================================================================
 
-def create_recipe(user_id, name, ingredients):
+def create_recipe(user_id, name, ingredients, full_text=None, servings=1):
     """
     Create a new recipe suggestion
     
@@ -303,6 +348,8 @@ def create_recipe(user_id, name, ingredients):
         user_id: User ID integer
         name: Recipe name string
         ingredients: Ingredients string (comma-separated or description)
+        full_text: Full recipe text from Claude (optional)
+        servings: Number of servings this recipe is for
     
     Returns:
         Recipe ID if successful, None otherwise
@@ -311,8 +358,8 @@ def create_recipe(user_id, name, ingredients):
         with get_db_connection() as conn:
             cursor = conn.cursor()
             cursor.execute(
-                "INSERT INTO recipes (user_id, name, ingredients) VALUES (?, ?, ?)",
-                (user_id, name, ingredients)
+                "INSERT INTO recipes (user_id, name, ingredients, full_text, servings) VALUES (?, ?, ?, ?, ?)",
+                (user_id, name, ingredients, full_text, servings)
             )
             return cursor.lastrowid
     except Exception:
@@ -332,7 +379,7 @@ def get_recipe(recipe_id):
     with get_db_connection() as conn:
         cursor = conn.cursor()
         cursor.execute(
-            "SELECT id, user_id, name, ingredients, suggested_at FROM recipes WHERE id = ?",
+            "SELECT id, user_id, name, ingredients, full_text, servings, suggested_at FROM recipes WHERE id = ?",
             (recipe_id,)
         )
         row = cursor.fetchone()
@@ -343,6 +390,8 @@ def get_recipe(recipe_id):
                 'user_id': row['user_id'],
                 'name': row['name'],
                 'ingredients': row['ingredients'],
+                'full_text': row['full_text'],
+                'servings': row['servings'],
                 'suggested_at': row['suggested_at']
             }
         return None
@@ -364,13 +413,13 @@ def get_user_recipes(user_id, limit=None):
         
         if limit:
             cursor.execute(
-                "SELECT id, user_id, name, ingredients, suggested_at FROM recipes "
+                "SELECT id, user_id, name, ingredients, full_text, servings, suggested_at FROM recipes "
                 "WHERE user_id = ? ORDER BY suggested_at DESC LIMIT ?",
                 (user_id, limit)
             )
         else:
             cursor.execute(
-                "SELECT id, user_id, name, ingredients, suggested_at FROM recipes "
+                "SELECT id, user_id, name, ingredients, full_text, servings, suggested_at FROM recipes "
                 "WHERE user_id = ? ORDER BY suggested_at DESC",
                 (user_id,)
             )
@@ -383,6 +432,8 @@ def get_user_recipes(user_id, limit=None):
                 'user_id': row['user_id'],
                 'name': row['name'],
                 'ingredients': row['ingredients'],
+                'full_text': row['full_text'],
+                'servings': row['servings'],
                 'suggested_at': row['suggested_at']
             }
             for row in rows
@@ -402,7 +453,7 @@ def get_unrated_recipes(user_id):
     with get_db_connection() as conn:
         cursor = conn.cursor()
         cursor.execute("""
-            SELECT r.id, r.user_id, r.name, r.ingredients, r.suggested_at 
+            SELECT r.id, r.user_id, r.name, r.ingredients, r.full_text, r.servings, r.suggested_at 
             FROM recipes r
             LEFT JOIN ratings rt ON r.id = rt.recipe_id
             WHERE r.user_id = ? AND rt.id IS NULL
@@ -417,7 +468,69 @@ def get_unrated_recipes(user_id):
                 'user_id': row['user_id'],
                 'name': row['name'],
                 'ingredients': row['ingredients'],
+                'full_text': row['full_text'],
+                'servings': row['servings'],
                 'suggested_at': row['suggested_at']
+            }
+            for row in rows
+        ]
+
+
+def get_recipes_with_ratings(user_id, min_rating=None, max_rating=None, include_unrated=True):
+    """
+    Get recipes filtered by rating
+    
+    Args:
+        user_id: User ID integer
+        min_rating: Minimum rating (1-5), None for no minimum
+        max_rating: Maximum rating (1-5), None for no maximum
+        include_unrated: Include recipes without ratings
+    
+    Returns:
+        List of dictionaries with recipe and rating data
+    """
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        
+        query = """
+            SELECT 
+                r.id, r.user_id, r.name, r.ingredients, r.full_text, r.servings, r.suggested_at,
+                rt.rating, rt.comment, rt.rated_at
+            FROM recipes r
+            LEFT JOIN ratings rt ON r.id = rt.recipe_id
+            WHERE r.user_id = ?
+        """
+        
+        params = [user_id]
+        
+        if not include_unrated:
+            query += " AND rt.id IS NOT NULL"
+        
+        if min_rating is not None:
+            query += " AND (rt.rating >= ? OR rt.rating IS NULL)"
+            params.append(min_rating)
+        
+        if max_rating is not None:
+            query += " AND (rt.rating <= ? OR rt.rating IS NULL)"
+            params.append(max_rating)
+        
+        query += " ORDER BY r.suggested_at DESC"
+        
+        cursor.execute(query, params)
+        rows = cursor.fetchall()
+        
+        return [
+            {
+                'id': row['id'],
+                'user_id': row['user_id'],
+                'name': row['name'],
+                'ingredients': row['ingredients'],
+                'full_text': row['full_text'],
+                'servings': row['servings'],
+                'suggested_at': row['suggested_at'],
+                'rating': row['rating'],
+                'comment': row['comment'],
+                'rated_at': row['rated_at']
             }
             for row in rows
         ]

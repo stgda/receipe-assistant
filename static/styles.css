@@ -469,3 +469,97 @@ h3 {
     border-radius: 8px;
     margin-top: 15px;
 }
+
+/* New styles for v2 features */
+.servings-control {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+}
+
+.input-small {
+    width: 100px;
+}
+
+.btn-small {
+    padding: 8px 16px;
+    font-size: 0.9rem;
+}
+
+.help-text {
+    display: block;
+    font-size: 0.85rem;
+    color: #666;
+    margin-top: 5px;
+}
+
+.filter-controls {
+    margin-bottom: 20px;
+}
+
+.filter-buttons {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 10px;
+}
+
+.filter-btn {
+    padding: 8px 16px;
+    border: 2px solid #e5e7eb;
+    border-radius: 6px;
+    background: white;
+    cursor: pointer;
+    font-size: 0.9rem;
+    transition: all 0.3s ease;
+}
+
+.filter-btn:hover {
+    background: #f0f4ff;
+}
+
+.filter-btn.active {
+    background: #667eea;
+    color: white;
+    border-color: #667eea;
+}
+
+.recipe-history {
+    display: grid;
+    gap: 15px;
+}
+
+.recipe-detail {
+    animation: fadeIn 0.3s ease;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+.recipe-full-text {
+    background: #f9fafb;
+    padding: 20px;
+    border-radius: 8px;
+    white-space: pre-wrap;
+    line-height: 1.8;
+    margin-top: 20px;
+    border: 1px solid #e5e7eb;
+}
+
+.detail-info {
+    background: #f9fafb;
+    padding: 15px;
+    border-radius: 8px;
+    margin: 15px 0;
+    border: 1px solid #e5e7eb;
+}
+
+.detail-info p {
+    margin: 8px 0;
+}
+
+.detail-info strong {
+    color: #667eea;
+}
