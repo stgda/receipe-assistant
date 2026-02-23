@@ -21,6 +21,10 @@ app = FastAPI(
     version="1.0.0"
 )
 
+# Users directory - configurable for Docker volumes
+USERS_DIR = os.environ.get('USERS_DATA_PATH', 'users')
+os.makedirs(USERS_DIR, exist_ok=True)
+
 # CORS middleware for frontend access
 app.add_middleware(
     CORSMiddleware,

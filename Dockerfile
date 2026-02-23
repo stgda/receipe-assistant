@@ -1,39 +1,46 @@
-# Recipe Assistant Dockerfile
+# Dockerfile für Recipe Assistant
+
 FROM python:3.11-slim
 
-# Set working directory
+# Arbeitsverzeichnis erstellen
 WORKDIR /app
 
-# Install system dependencies
+# System-Dependencies installieren
 RUN apt-get update && apt-get install -y \
-    build-essential \
+    sqlite3 \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy requirements first (for better caching)
+# Python-Dependencies installieren
 COPY requirements.txt .
-
-# Install Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy application code
+# Anwendungscode kopieren
 COPY database.py .
 COPY services.py .
 COPY api.py .
+COPY recipe_assistant.py .
+
+# Static files kopieren
 COPY static/ ./static/
 
-# Create directory for database
-RUN mkdir -p /data
+# Verzeichnisse für persistente Daten erstellen
+RUN mkdir -p /data/users
 
-# Expose port
+# Umgebungsvariablen für Datenpfade setzen
+ENV DATABASE_PATH=/data/recipe_assistant.db
+ENV USERS_DATA_PATH=/data/users
+
+# Container als non-root user ausführen (best practice)
+RUN useradd -m -u 1000 appuser && \
+    chown -R appuser:appuser /app /data
+USER appuser
+
+# Port freigeben
 EXPOSE 8000
 
-# Environment variables (can be overridden)
-ENV ANTHROPIC_API_KEY=""
-ENV DATABASE_PATH="/data/recipe_assistant.db"
-
-# Health check
+# Healthcheck
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
     CMD python -c "import requests; requests.get('http://localhost:8000/api/health')" || exit 1
 
-# Run the application
-CMD ["python", "-m", "uvicorn", "api:app", "--host", "0.0.0.0", "--port", "8000"]
+# Server starten
+CMD ["python", "api.py"]

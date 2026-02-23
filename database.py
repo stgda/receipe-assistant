@@ -7,8 +7,21 @@ import sqlite3
 import os
 from contextlib import contextmanager
 
-# Database file location
-DB_FILE = "recipe_assistant.db"
+# Database file location - configurable for Docker volumes
+DB_FILE = os.environ.get('DATABASE_PATH', 'recipe_assistant.db')
+
+# Ensure data directory exists (only if we have permissions)
+db_dir = os.path.dirname(DB_FILE)
+if db_dir:
+    try:
+        # Try to create directory if it doesn't exist
+        if not os.path.exists(db_dir):
+            os.makedirs(db_dir, exist_ok=True)
+    except (PermissionError, OSError) as e:
+        # Fallback to current directory if we can't create the directory
+        print(f"Warning: Cannot create directory '{db_dir}': {e}")
+        print(f"Falling back to current directory")
+        DB_FILE = os.path.basename(DB_FILE)
 
 
 @contextmanager

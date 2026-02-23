@@ -6,30 +6,36 @@ __pycache__/
 .Python
 venv/
 env/
-.venv
+ENV/
 
-# Database (will be mounted as volume)
-*.db
-*.db-journal
-
-# User data (will be mounted as volume)
+# Data files (will be in volumes)
+recipe_assistant.db
+recipe_assistant.db-journal
 users/
-data/
+*.log
 
-# Development
-.git/
-.gitignore
-*.md
+# IDE
 .vscode/
 .idea/
+*.swp
+*.swo
 
-# Logs
-*.log
+# Git
+.git/
+.gitignore
+
+# Docker
+.dockerignore
+
+# Documentation
+*.md
+!requirements.txt
 
 # OS
 .DS_Store
 Thumbs.db
 
 # Backups
+*.old
+*.backup
 *_old.*
-*.bak
