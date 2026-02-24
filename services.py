@@ -134,10 +134,15 @@ Keep the suggestions concise and practically feasible."""
             # Parse recipe names
             recipe_names = self._parse_recipe_names(response_text)
             
-            # Save recipes to database with full text and servings
+            # Split recipes into individual texts
+            individual_recipes = self._split_recipes(response_text)
+            
+            # Save recipes to database with individual text and servings
             recipe_ids = []
             for name in recipe_names:
-                recipe_id = db.create_recipe(user_id, name, ingredients, response_text, servings)
+                # Get individual recipe text, fallback to full text if not found
+                recipe_text = individual_recipes.get(name, response_text)
+                recipe_id = db.create_recipe(user_id, name, ingredients, recipe_text, servings)
                 if recipe_id:
                     recipe_ids.append(recipe_id)
             
@@ -178,6 +183,37 @@ Keep the suggestions concise and practically feasible."""
                     recipe_names.append(name)
         
         return recipe_names
+    
+    def _split_recipes(self, response_text):
+        """
+        Split combined recipe text into individual recipes
+        
+        Args:
+            response_text: Raw response text with multiple recipes separated by ## headers
+        
+        Returns:
+            Dictionary mapping recipe names to their individual text
+        """
+        import re
+        
+        # Split text by ## headers (recipe names)
+        # Use lookahead to keep the ## in the split
+        parts = re.split(r'(?=^## )', response_text, flags=re.MULTILINE)
+        
+        recipes = {}
+        for part in parts:
+            part = part.strip()
+            if part.startswith('##'):
+                # Extract recipe name from first line
+                lines = part.split('\n', 1)
+                recipe_name = lines[0].replace('##', '').strip()
+                
+                # Full recipe text includes header and content
+                recipe_text = part
+                
+                recipes[recipe_name] = recipe_text
+        
+        return recipes
     
     def get_unrated_recipes(self, user_id):
         """
