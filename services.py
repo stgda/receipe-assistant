@@ -8,6 +8,70 @@ import database as db
 from datetime import datetime
 import anthropic
 import os
+import json
+
+
+def get_user_log_file(user_id):
+    """
+    Get log file path for a specific user
+    
+    Args:
+        user_id: User ID integer
+    
+    Returns:
+        Path to user's log file
+    """
+    user = db.get_user_by_id(user_id)
+    if not user:
+        return None
+    
+    username = user['username']
+    users_dir = os.environ.get('USERS_DATA_PATH', 'users')
+    user_dir = os.path.join(users_dir, username)
+    os.makedirs(user_dir, exist_ok=True)
+    
+    return os.path.join(user_dir, 'api_log.json')
+
+
+def log_api_call(user_id, prompt, response, model="claude-sonnet-4-20250514"):
+    """
+    Log API call to user's log file
+    
+    Args:
+        user_id: User ID integer
+        prompt: Prompt sent to Claude
+        response: Response from Claude
+        model: Model name used
+    """
+    log_file = get_user_log_file(user_id)
+    if not log_file:
+        return
+    
+    log_entry = {
+        'timestamp': datetime.now().isoformat(),
+        'model': model,
+        'prompt': prompt,
+        'response': response
+    }
+    
+    # Load existing logs
+    logs = []
+    if os.path.exists(log_file):
+        try:
+            with open(log_file, 'r', encoding='utf-8') as f:
+                logs = json.load(f)
+        except:
+            logs = []
+    
+    # Append new log
+    logs.append(log_entry)
+    
+    # Save logs
+    try:
+        with open(log_file, 'w', encoding='utf-8') as f:
+            json.dump(logs, f, indent=2, ensure_ascii=False)
+    except Exception as e:
+        print(f"Warning: Could not write log file: {e}")
 
 
 class RecipeService:
@@ -130,6 +194,9 @@ Keep the suggestions concise and practically feasible."""
             )
             
             response_text = message.content[0].text
+            
+            # Log API call
+            log_api_call(user_id, prompt, response_text, model="claude-sonnet-4-20250514")
             
             # Parse recipe names
             recipe_names = self._parse_recipe_names(response_text)

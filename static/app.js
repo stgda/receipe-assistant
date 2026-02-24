@@ -448,6 +448,8 @@ function switchTab(tabName) {
         loadPreferences();
     } else if (tabName === 'history') {
         loadRecipeHistory();
+    } else if (tabName === 'logs') {
+        loadAPILogs();
     }
 }
 
@@ -502,6 +504,9 @@ document.addEventListener('DOMContentLoaded', () => {
     
     document.getElementById('closeDetailBtn').onclick = closeRecipeDetail;
     
+    // Logs tab buttons
+    document.getElementById('refreshLogsBtn').onclick = loadAPILogs;
+    
     // Keyboard shortcuts
     document.getElementById('ingredients').onkeypress = (e) => {
         if (e.key === 'Enter' && e.ctrlKey) {
@@ -509,3 +514,93 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     };
 });
+
+// Logs functionality
+async function loadAPILogs() {
+    try {
+        showLoading();
+        const result = await apiCall(`/api/logs/${currentUser.id}`);
+        
+        const container = document.getElementById('logsContainer');
+        const noLogsMsg = document.getElementById('noLogs');
+        
+        if (!result.logs || result.logs.length === 0) {
+            container.innerHTML = '';
+            noLogsMsg.style.display = 'block';
+            return;
+        }
+        
+        noLogsMsg.style.display = 'none';
+        
+        container.innerHTML = result.logs.map((log, index) => {
+            const timestamp = new Date(log.timestamp).toLocaleString();
+            const promptPreview = log.prompt.substring(0, 150);
+            const responsePreview = log.response.substring(0, 150);
+            
+            return `
+                <div class="log-entry">
+                    <div class="log-header">
+                        <span class="log-timestamp">${timestamp}</span>
+                        <span class="log-model">${log.model}</span>
+                    </div>
+                    
+                    <div class="log-section">
+                        <h4>Prompt</h4>
+                        <div class="log-content collapsed" id="prompt-${index}">
+${log.prompt}
+                        </div>
+                        <button class="log-toggle" onclick="toggleLogContent('prompt-${index}')">
+                            Show more
+                        </button>
+                    </div>
+                    
+                    <div class="log-section">
+                        <h4>Response</h4>
+                        <div class="log-content collapsed" id="response-${index}">
+${log.response}
+                        </div>
+                        <button class="log-toggle" onclick="toggleLogContent('response-${index}')">
+                            Show more
+                        </button>
+                    </div>
+                </div>
+            `;
+        }).join('');
+    } catch (error) {
+        console.error('Failed to load logs:', error);
+        showError('Failed to load logs: ' + error.message);
+    } finally {
+        hideLoading();
+    }
+}
+
+function toggleLogContent(elementId) {
+    const element = document.getElementById(elementId);
+    const button = element.nextElementSibling;
+    
+    if (element.classList.contains('collapsed')) {
+        element.classList.remove('collapsed');
+        button.textContent = 'Show less';
+    } else {
+        element.classList.add('collapsed');
+        button.textContent = 'Show more';
+    }
+}
+
+async function clearAPILogs() {
+    if (!confirm('Are you sure you want to clear all API logs? This cannot be undone.')) {
+        return;
+    }
+    
+    try {
+        showLoading();
+        const logFile = await apiCall(`/api/logs/${currentUser.id}/clear`, 'DELETE');
+        showSuccess('Logs cleared successfully!');
+        loadAPILogs();
+    } catch (error) {
+        showError('Failed to clear logs: ' + error.message);
+    } finally {
+        hideLoading();
+    }
+}
+

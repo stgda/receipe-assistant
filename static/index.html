@@ -52,6 +52,7 @@
                 <button class="tab-btn" data-tab="feedback">Give Feedback</button>
                 <button class="tab-btn" data-tab="history">Recipe History</button>
                 <button class="tab-btn" data-tab="preferences">Preferences</button>
+                <button class="tab-btn" data-tab="logs">API Logs</button>
             </div>
 
             <!-- Suggest Tab -->
@@ -175,6 +176,27 @@
                         <h3 id="dislikedTitle">Disliked Dishes</h3>
                         <ul id="dislikedList"></ul>
                     </div>
+                </div>
+            </div>
+
+            <!-- Logs Tab -->
+            <div id="logsTab" class="tab-content">
+                <div class="card">
+                    <h2>API Logs</h2>
+                    <p class="subtitle">View all API calls to Claude</p>
+                    
+                    <div class="logs-controls">
+                        <button id="refreshLogsBtn" class="btn btn-secondary">🔄 Refresh</button>
+                        <button id="clearLogsBtn" class="btn btn-secondary">🗑️ Clear All</button>
+                    </div>
+                    
+                    <div id="logsContainer" class="logs-container">
+                        <!-- Logs will be loaded here -->
+                    </div>
+                    
+                    <p id="noLogs" class="info-text" style="display: none;">
+                        No API logs yet. Make a recipe suggestion to see logs here.
+                    </p>
                 </div>
             </div>
         </div>

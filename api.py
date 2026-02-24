@@ -298,6 +298,45 @@ async def get_preferences(user_id: int):
     }
 
 
+# ============================================================================
+# API Logs Endpoint
+# ============================================================================
+
+@app.get("/api/logs/{user_id}")
+async def get_api_logs(user_id: int, limit: Optional[int] = None):
+    """Get API call logs for a user"""
+    from services import get_user_log_file
+    import json
+    
+    log_file = get_user_log_file(user_id)
+    
+    if not log_file or not os.path.exists(log_file):
+        return {
+            "success": True,
+            "logs": [],
+            "count": 0
+        }
+    
+    try:
+        with open(log_file, 'r', encoding='utf-8') as f:
+            logs = json.load(f)
+        
+        # Reverse to show newest first
+        logs = list(reversed(logs))
+        
+        # Apply limit if specified
+        if limit:
+            logs = logs[:limit]
+        
+        return {
+            "success": True,
+            "logs": logs,
+            "count": len(logs)
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to read logs: {str(e)}")
+
+
 # Mount static files (HTML, CSS, JS)
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
